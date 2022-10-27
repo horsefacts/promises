@@ -52,20 +52,30 @@ contract PromisesTest is Test {
 
     function test_make_stores_promise() public {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
         assertEq(promises.count(), 1);
 
         Promise memory created = promises.promises(1);
         assertEq(uint8(created.state), uint8(State.Pending));
-        assertEq(uint8(created.callable), uint8(Callable.Before));
-        assertEq(created.timestamp, expire);
+        assertEq(created.expires, expire);
 
         assertEq(created.resolve.target, address(resolver));
-        assertEq(created.resolve.callData, abi.encodeCall(resolver.resolve, (true)));
+        assertEq(
+            created.resolve.callData, abi.encodeCall(resolver.resolve, (true))
+        );
 
         assertEq(created.fulfill.target, address(noop));
         assertEq(created.fulfill.callData, abi.encodeCall(noop.noop, ()));
@@ -74,132 +84,219 @@ contract PromisesTest is Test {
         assertEq(created.reject.callData, abi.encodeCall(noop.noop, ()));
     }
 
-    function test_keep_promise_reverts_not_found() public {
+    function test_fulfill_promise_reverts_not_found() public {
         vm.expectRevert(NotFound.selector);
-        promises.keep(1);
+        promises.fulfill(1);
     }
 
-    function test_keep_promise_reverts_forbidden_before() public {
-        vm.warp(block.timestamp + 30 days);
-        uint64 expire = uint64(block.timestamp) - 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+    function test_reject_promise_reverts_not_found() public {
+        vm.expectRevert(NotFound.selector);
+        promises.reject(1);
+    }
+
+    function test_fulfill_promise_reverts_forbidden_after_expired() public {
+        uint64 expire = uint64(block.timestamp) + 30 days;
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
+
+        vm.warp(block.timestamp + 30 days + 1);
 
         vm.expectRevert(Forbidden.selector);
-        promises.keep(1);
+        promises.fulfill(1);
     }
 
-    function test_keep_promise_reverts_forbidden_after() public {
+    function test_fulfill_promise_sets_state_resolved_when_promise_resolves()
+        public
+    {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.After, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
-        vm.expectRevert(Forbidden.selector);
-        promises.keep(1);
-    }
-
-    function test_keep_promise_sets_state_resolved_when_promise_resolves() public {
-        uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
-
-        promises.keep(1);
+        promises.fulfill(1);
 
         Promise memory updated = promises.promises(1);
         assertEq(uint8(updated.state), uint8(State.Resolved));
     }
 
-    function test_keep_promise_reverts_unauthorized_resolver() public {
+    function test_fulfill_promise_reverts_unauthorized_caller() public {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
         vm.expectRevert(Forbidden.selector);
         vm.prank(eve);
-        promises.keep(1);
+        promises.fulfill(1);
     }
 
-    function test_keep_promise_reverts_already_resolved() public {
+    function test_fulfill_promise_reverts_already_resolved() public {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
-        promises.keep(1);
+        promises.fulfill(1);
 
         vm.expectRevert(Resolved.selector);
-        promises.keep(1);
+        promises.fulfill(1);
     }
 
-    function test_keep_promise_calls_fulfill_target_when_promise_resolves() public {
+    function test_fulfill_promise_calls_fulfill_target_when_promise_resolves()
+        public
+    {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill =
-            Call({target: address(fulfillTarget), callData: abi.encodeCall(fulfillTarget.fulfill, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(fulfillTarget),
+            callData: abi.encodeCall(fulfillTarget.fulfill, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
         assertEq(fulfillTarget.called(), false);
 
-        promises.keep(1);
+        promises.fulfill(1);
 
         assertEq(fulfillTarget.called(), true);
     }
 
-    function test_keep_promise_reverts_unauthorized_rejecter() public {
+    function test_reject_promise_reverts_unauthorized_rejecter() public {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (false))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (false))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
         vm.expectRevert(Forbidden.selector);
         vm.prank(eve);
-        promises.keep(1);
+        promises.reject(1);
     }
 
-    function test_keep_promise_sets_state_rejected_when_promise_rejects() public {
+    function test_reject_promise_sets_state_rejected_when_promise_rejects()
+        public
+    {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (false))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (false))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
-        promises.keep(1);
+        vm.warp(block.timestamp + 30 days + 1);
+
+        promises.reject(1);
 
         Promise memory updated = promises.promises(1);
         assertEq(uint8(updated.state), uint8(State.Rejected));
     }
 
-    function test_keep_promise_calls_reject_target_when_promise_rejects() public {
+    function test_reject_promise_calls_reject_target_when_promise_rejects()
+        public
+    {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (false))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(rejectTarget), callData: abi.encodeCall(rejectTarget.reject, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (false))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(rejectTarget),
+            callData: abi.encodeCall(rejectTarget.reject, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
+
+        vm.warp(block.timestamp + 30 days + 1);
 
         assertEq(rejectTarget.called(), false);
 
-        promises.keep(1);
+        promises.reject(1);
 
         assertEq(rejectTarget.called(), true);
     }
 
     function test_unauthorized_caller_cannot_call_proxy() public {
         uint64 expire = uint64(block.timestamp) + 30 days;
-        Call memory resolve = Call({target: address(resolver), callData: abi.encodeCall(resolver.resolve, (true))});
-        Call memory fulfill = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        Call memory reject = Call({target: address(noop), callData: abi.encodeCall(noop.noop, ())});
-        promises.make(Callable.Before, expire, resolve, fulfill, reject);
+        Call memory resolve = Call({
+            target: address(resolver),
+            callData: abi.encodeCall(resolver.resolve, (true))
+        });
+        Call memory fulfill = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        Call memory reject = Call({
+            target: address(noop),
+            callData: abi.encodeCall(noop.noop, ())
+        });
+        promises.make(expire, resolve, fulfill, reject);
 
         assertEq(promises.proxy(1).promises(), address(promises));
 

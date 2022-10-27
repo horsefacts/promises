@@ -9,19 +9,13 @@ enum State {
     Rejected
 }
 
-enum Callable {
-    Before,
-    After
-}
-
 struct Call {
     address target;
     bytes callData;
 }
 
 struct Promise {
-    Callable callable;
-    uint64 timestamp;
+    uint64 expires;
     Call resolve;
     Call fulfill;
     Call reject;
@@ -41,18 +35,16 @@ contract Promises is ERC721("Promises", "PROMISE") {
     event Rejected(address indexed caller, uint256 promiseId);
 
     function make(
-        Callable callable,
-        uint64 timestamp,
+        uint64 expires,
         Call calldata resolve,
-        Call calldata fulfill,
-        Call calldata reject
+        Call calldata _fulfill,
+        Call calldata _reject
     ) external returns (address) {
         _promises[++count] = Promise({
-            callable: callable,
-            timestamp: timestamp,
+            expires: expires,
             resolve: resolve,
-            fulfill: fulfill,
-            reject: reject,
+            fulfill: _fulfill,
+            reject: _reject,
             state: State.Pending
         });
         PromiseProxy _proxy = new PromiseProxy{ salt: bytes32(count) }();
@@ -61,29 +53,61 @@ contract Promises is ERC721("Promises", "PROMISE") {
         return address(_proxy);
     }
 
-    function keep(uint256 promiseId) external returns (bytes memory result) {
+    function fulfill(uint256 promiseId)
+        external
+        returns (bytes memory result)
+    {
+        // Promise must exist
         Promise memory _promise = _promises[promiseId];
-        if (_promise.timestamp == 0) revert NotFound();
+        if (_promise.expires == 0) revert NotFound();
+
+        // Promise cannot already be resolved
         if (_promise.state != State.Pending) revert Resolved();
-        if (_promise.callable == Callable.Before) {
-            if (block.timestamp > _promise.timestamp) revert Forbidden();
-        } else {
-            if (block.timestamp < _promise.timestamp) revert Forbidden();
-        }
+
+        // Promise must not be expired
+        if (block.timestamp > _promise.expires) revert Forbidden();
+
+        // Caller must own fulfill token
+        if (msg.sender != ownerOf(2 * promiseId - 1)) revert Forbidden();
+
+        // Call resolver
         bool success;
-        (success, result) = address(_promise.resolve.target).call(_promise.resolve.callData);
+        (success, result) =
+            address(_promise.resolve.target).call(_promise.resolve.callData);
         (bool resolved) = abi.decode(result, (bool));
+
         if (success && resolved) {
-            if (msg.sender != ownerOf(2 * promiseId)) revert Forbidden();
             _promises[promiseId].state = State.Resolved;
-            (success, result) = proxy(promiseId).exec(_promise.fulfill.target, _promise.fulfill.callData);
+            (success, result) = proxy(promiseId).exec(
+                _promise.fulfill.target, _promise.fulfill.callData
+            );
             emit Fulfilled(msg.sender, promiseId);
+            if (!success) revert CallFailed();
         } else {
-            if (msg.sender != ownerOf(2 * promiseId - 1)) revert Forbidden();
-            _promises[promiseId].state = State.Rejected;
-            (success, result) = proxy(promiseId).exec(_promise.reject.target, _promise.reject.callData);
-            emit Rejected(msg.sender, promiseId);
+            revert Forbidden();
         }
+    }
+
+    function reject(uint256 promiseId) external returns (bytes memory result) {
+        // Promise must exist
+        Promise memory _promise = _promises[promiseId];
+        if (_promise.expires == 0) revert NotFound();
+
+        // Promise cannot already be resolved
+        if (_promise.state != State.Pending) revert Resolved();
+
+        // Promise must be expired
+        if (block.timestamp <= _promise.expires) revert Forbidden();
+
+        // Caller must own reject token
+        if (msg.sender != ownerOf(2 * promiseId)) revert Forbidden();
+
+        bool success;
+        _promises[promiseId].state = State.Rejected;
+        (success, result) = proxy(promiseId).exec(
+            _promise.reject.target, _promise.reject.callData
+        );
+        emit Rejected(msg.sender, promiseId);
         if (!success) revert CallFailed();
     }
 
@@ -94,7 +118,10 @@ contract Promises is ERC721("Promises", "PROMISE") {
                     uint256(
                         keccak256(
                             abi.encodePacked(
-                                bytes1(0xff), address(this), promiseId, keccak256(type(PromiseProxy).creationCode)
+                                bytes1(0xff),
+                                address(this),
+                                promiseId,
+                                keccak256(type(PromiseProxy).creationCode)
                             )
                         )
                     )
@@ -111,7 +138,11 @@ contract Promises is ERC721("Promises", "PROMISE") {
         return count * 2;
     }
 
-    function promises(uint256 promiseId) external view returns (Promise memory) {
+    function promises(uint256 promiseId)
+        external
+        view
+        returns (Promise memory)
+    {
         return _promises[promiseId];
     }
 }
@@ -123,7 +154,10 @@ contract PromiseProxy {
         promises = msg.sender;
     }
 
-    function exec(address target, bytes memory callData) external returns (bool success, bytes memory result) {
+    function exec(address target, bytes memory callData)
+        external
+        returns (bool success, bytes memory result)
+    {
         if (msg.sender != promises) revert Forbidden();
         (success, result) = target.call(callData);
     }

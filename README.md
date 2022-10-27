@@ -7,12 +7,12 @@
 ### External functions:
 
 - `make`: Make a promise. Issues separate fulfill and reject ERC721 tokens to caller.
-  - `callable`: Whether the promise may be resolved `Before` or `After` its `timestamp`.
-  - `timestamp`: Time at which the promise either expires or can be resolved.
+  - `expiration`: Time at which the promise expires and can be rejected.
   - `resolve`: Target address and calldata for a call that will be invoked to decide whether the promise is fulfilled or rejected. This call should return a `bool`.
   - `fulfill`: A call that will be invoked if the promise is fulfilled.
   - `reject`: A call that will be invoked if the promise is rejected.
-- `keep`: Keep a promise. Invokes `fulfill` if `resolve` returns `true`, otherwise invokes `reject`. Caller must own the fulfill token to fulfill, or the reject token to reject.
+- `fulfill`: Fulfill a promise. Invokes `fulfill` if `resolve` returns `true`. Promise must not be expired. Caller must own the fulfill token.
+- `reject`: Reject a promise. Invokes `reject`. Promise must be expired. Caller must own the reject token.
 - `ERC721` external interface.
 
 ### View functions:

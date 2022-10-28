@@ -24,15 +24,25 @@ contract Oracle {
     }
 }
 
-contract Resolver {
-    Oracle public oracle;
+contract Resolver is IResolve, IFulfill, IReject {
+    Oracle public immutable oracle;
+    Token public immutable token;
 
-    constructor(Oracle _oracle) {
+    constructor(Oracle _oracle, Token _token) {
         oracle = _oracle;
+        token = _token;
     }
 
     function resolve() external view returns (bool) {
         return oracle.price() > 2000;
+    }
+
+    function fulfill(address long, address) external {
+        token.transfer(long, 1000 ether);
+    }
+
+    function reject(address, address short) external {
+        token.transfer(short, 1000 ether);
     }
 }
 
@@ -49,7 +59,7 @@ contract WagerTest is Test {
         promises = new Promises();
         token = new Token();
         oracle = new Oracle();
-        resolver = new Resolver(oracle);
+        resolver = new Resolver(oracle, token);
 
         token.mint(alice, 1000 ether);
     }
@@ -61,28 +71,8 @@ contract WagerTest is Test {
         // Promise expiration is 30 days from now.
         uint64 expire = uint64(block.timestamp) + 30 days;
 
-        // Call the resolver contract to resolve the promise.
-        Call memory resolve = Call({
-            target: address(resolver),
-            callData: abi.encodeCall(resolver.resolve, ())
-        });
-
-        // If the promise is fulfilled, Alice wins the bet. Encode a call that
-        // transfers the wager amount from the promise proxy back to Alice.
-        Call memory fulfill = Call({
-            target: address(token),
-            callData: abi.encodeCall(token.transfer, (alice, 1000 ether))
-        });
-
-        // If the promise is rejected, Bob wins the bet. Encode a call that
-        // transfers the wager amount from the promise proxy to Bob.
-        Call memory reject = Call({
-            target: address(token),
-            callData: abi.encodeCall(token.transfer, (bob, 1000 ether))
-        });
-
         vm.startPrank(alice);
-        promises.make(expire, resolve, fulfill, reject);
+        promises.make(expire, resolver, resolver, resolver);
         PromiseProxy proxy = promises.proxy(1);
 
         // Alice sends the wager amount to the promise proxy.

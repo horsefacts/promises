@@ -3,22 +3,29 @@ pragma solidity ^0.8.13;
 
 import {ERC721} from "solmate/tokens/ERC721.sol";
 
+interface IResolve {
+    function resolve() external view returns (bool);
+}
+
+interface IFulfill {
+    function fulfill(address long, address short) external;
+}
+
+interface IReject {
+    function reject(address long, address short) external;
+}
+
 enum State {
     Pending,
     Resolved,
     Rejected
 }
 
-struct Call {
-    address target;
-    bytes callData;
-}
-
 struct Promise {
     uint64 expires;
-    Call resolve;
-    Call fulfill;
-    Call reject;
+    IResolve resolve;
+    IFulfill fulfill;
+    IReject reject;
     State state;
 }
 
@@ -36,10 +43,17 @@ contract Promises is ERC721("Promises", "PROMISE") {
 
     function make(
         uint64 expires,
-        Call calldata resolve,
-        Call calldata _fulfill,
-        Call calldata _reject
+        address execute
     ) external returns (address) {
+        return make(expires, IResolve(execute), IFulfill(execute), IReject(execute));
+    }
+
+    function make(
+        uint64 expires,
+        IResolve resolve,
+        IFulfill _fulfill,
+        IReject _reject
+    ) public returns (address) {
         _promises[++count] = Promise({
             expires: expires,
             resolve: resolve,
@@ -55,7 +69,6 @@ contract Promises is ERC721("Promises", "PROMISE") {
 
     function fulfill(uint256 promiseId)
         external
-        returns (bytes memory result)
     {
         // Promise must exist
         Promise memory _promise = _promises[promiseId];
@@ -70,25 +83,25 @@ contract Promises is ERC721("Promises", "PROMISE") {
         // Caller must own fulfill token
         if (msg.sender != ownerOf(2 * promiseId - 1)) revert Forbidden();
 
+        // Get proxy
+        PromiseProxy _proxy = proxy(promiseId);
+
         // Call resolver
-        bool success;
-        (success, result) =
-            address(_promise.resolve.target).call(_promise.resolve.callData);
+        (bool success, bytes memory result) = _proxy.exec(address(_promise.resolve), abi.encodeCall(IResolve.resolve, ()));
         (bool resolved) = abi.decode(result, (bool));
 
         if (success && resolved) {
+            address short = ownerOf(2 * promiseId);
             _promises[promiseId].state = State.Resolved;
-            (success, result) = proxy(promiseId).exec(
-                _promise.fulfill.target, _promise.fulfill.callData
-            );
+            (success,) = _proxy.exec(address(_promise.fulfill), abi.encodeCall(IFulfill.fulfill, (msg.sender, short)));
+            if(!success) revert CallFailed();
             emit Fulfilled(msg.sender, promiseId);
-            if (!success) revert CallFailed();
         } else {
             revert Forbidden();
         }
     }
 
-    function reject(uint256 promiseId) external returns (bytes memory result) {
+    function reject(uint256 promiseId) external {
         // Promise must exist
         Promise memory _promise = _promises[promiseId];
         if (_promise.expires == 0) revert NotFound();
@@ -102,13 +115,14 @@ contract Promises is ERC721("Promises", "PROMISE") {
         // Caller must own reject token
         if (msg.sender != ownerOf(2 * promiseId)) revert Forbidden();
 
-        bool success;
+        // Get proxy
+        PromiseProxy _proxy = proxy(promiseId);
+
+        address long = ownerOf(2 * promiseId - 1);
         _promises[promiseId].state = State.Rejected;
-        (success, result) = proxy(promiseId).exec(
-            _promise.reject.target, _promise.reject.callData
-        );
+        (bool success,) = _proxy.exec(address(_promise.reject), abi.encodeCall(IReject.reject, (long, msg.sender)));
+        if(!success) revert CallFailed();
         emit Rejected(msg.sender, promiseId);
-        if (!success) revert CallFailed();
     }
 
     function proxy(uint256 promiseId) public view returns (PromiseProxy) {
@@ -159,6 +173,6 @@ contract PromiseProxy {
         returns (bool success, bytes memory result)
     {
         if (msg.sender != promises) revert Forbidden();
-        (success, result) = target.call(callData);
+        (success, result) = target.delegatecall(callData);
     }
 }

@@ -41,11 +41,10 @@ contract Promises is ERC721("Promises", "PROMISE") {
     event Fulfilled(address indexed caller, uint256 promiseId);
     event Rejected(address indexed caller, uint256 promiseId);
 
-    function make(
-        uint64 expires,
-        address execute
-    ) external returns (address) {
-        return make(expires, IResolve(execute), IFulfill(execute), IReject(execute));
+    function make(uint64 expires, address execute) external returns (address) {
+        return make(
+            expires, IResolve(execute), IFulfill(execute), IReject(execute)
+        );
     }
 
     function make(
@@ -67,9 +66,7 @@ contract Promises is ERC721("Promises", "PROMISE") {
         return address(_proxy);
     }
 
-    function fulfill(uint256 promiseId)
-        external
-    {
+    function fulfill(uint256 promiseId) external {
         // Promise must exist
         Promise memory _promise = _promises[promiseId];
         if (_promise.expires == 0) revert NotFound();
@@ -87,14 +84,19 @@ contract Promises is ERC721("Promises", "PROMISE") {
         PromiseProxy _proxy = proxy(promiseId);
 
         // Call resolver
-        (bool success, bytes memory result) = _proxy.exec(address(_promise.resolve), abi.encodeCall(IResolve.resolve, ()));
+        (bool success, bytes memory result) = _proxy.exec(
+            address(_promise.resolve), abi.encodeCall(IResolve.resolve, ())
+        );
         (bool resolved) = abi.decode(result, (bool));
 
         if (success && resolved) {
             address short = ownerOf(2 * promiseId);
             _promises[promiseId].state = State.Resolved;
-            (success,) = _proxy.exec(address(_promise.fulfill), abi.encodeCall(IFulfill.fulfill, (msg.sender, short)));
-            if(!success) revert CallFailed();
+            (success,) = _proxy.exec(
+                address(_promise.fulfill),
+                abi.encodeCall(IFulfill.fulfill, (msg.sender, short))
+            );
+            if (!success) revert CallFailed();
             emit Fulfilled(msg.sender, promiseId);
         } else {
             revert Forbidden();
@@ -120,8 +122,11 @@ contract Promises is ERC721("Promises", "PROMISE") {
 
         address long = ownerOf(2 * promiseId - 1);
         _promises[promiseId].state = State.Rejected;
-        (bool success,) = _proxy.exec(address(_promise.reject), abi.encodeCall(IReject.reject, (long, msg.sender)));
-        if(!success) revert CallFailed();
+        (bool success,) = _proxy.exec(
+            address(_promise.reject),
+            abi.encodeCall(IReject.reject, (long, msg.sender))
+        );
+        if (!success) revert CallFailed();
         emit Rejected(msg.sender, promiseId);
     }
 

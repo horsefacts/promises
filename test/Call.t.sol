@@ -47,7 +47,6 @@ contract CallOption is IResolve, IFulfill, IReject {
         token.transferFrom(long, short, 1000 ether);
     }
 
-
     // If the long side chooses not to exercise the option before
     // it expires, the short may withdraw their escrowed token.
     function reject(address, address short) external {

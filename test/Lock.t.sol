@@ -27,10 +27,9 @@ contract Lock is IResolve, IFulfill, IReject {
     }
 
     // This promise cannot be fulfilled.
-    function fulfill(address,address) external pure {
+    function fulfill(address, address) external pure {
         revert Forbidden();
     }
-
 
     // After expiration, the short may withdraw the locked
     // balance.
@@ -68,7 +67,6 @@ contract CallTest is Test {
         // Alice sends her tokens to the promise proxy.
         token.transfer(address(proxy), 1000 ether);
         vm.stopPrank();
-
     }
 
     function test_alice_creates_lock() public {

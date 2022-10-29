@@ -16,34 +16,31 @@ contract Calls {
         rejectCalled = true;
     }
 }
-contract ResolveTrue is IResolve{
 
+contract ResolveTrue is IResolve {
     function resolve() external pure returns (bool) {
         return true;
     }
-
 }
 
-contract ResolveFalse is IResolve{
-
+contract ResolveFalse is IResolve {
     function resolve() external pure returns (bool) {
         return false;
     }
-
 }
 
 contract Fulfill is IFulfill {
     Calls public immutable calls = new Calls();
 
-    function fulfill(address,address) external {
+    function fulfill(address, address) external {
         calls.setFulfillCalled();
     }
 }
 
-contract Reject is  IReject {
+contract Reject is IReject {
     Calls public immutable calls = new Calls();
 
-    function reject(address,address) external {
+    function reject(address, address) external {
         calls.setRejectCalled();
     }
 }
@@ -193,6 +190,8 @@ contract PromisesTest is Test {
 
         vm.expectRevert(Forbidden.selector);
         vm.prank(eve);
-        proxy.exec(address(fulfill), abi.encodeCall(fulfill.fulfill, (eve, address(0))));
+        proxy.exec(
+            address(fulfill), abi.encodeCall(fulfill.fulfill, (eve, address(0)))
+        );
     }
 }

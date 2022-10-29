@@ -45,10 +45,9 @@ contract Commitment is IResolve, IFulfill, IReject {
 
     // If the commitment is met, transfer the contract's
     // token balance to the long.
-    function fulfill(address long,address) external {
+    function fulfill(address long, address) external {
         token.transfer(long, token.balanceOf(address(this)));
     }
-
 
     // If the commitment is not met, burn the token balance.
     function reject(address, address) external {
@@ -89,7 +88,6 @@ contract CommitmentTest is Test {
         // Alice sends her tokens to the promise proxy.
         token.transfer(address(proxy), 1000 ether);
         vm.stopPrank();
-
     }
 
     function test_alice_meets_commitment() public {
